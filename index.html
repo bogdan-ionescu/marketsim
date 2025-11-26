@@ -333,7 +333,7 @@
     }
 
     function constrainPrice(price, mid) {
-      const band = mid * 0.01;
+      const band = mid * 0.03;
       const lower = mid - band;
       const upper = mid + band;
       return Math.min(Math.max(price, lower), upper);

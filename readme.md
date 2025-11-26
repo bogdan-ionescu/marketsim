@@ -1,6 +1,6 @@
 # Market Simulator
 
-A lightweight HTML + JavaScript market simulator that renders a live order book, candlestick price action, and cumulative depth curves. Orders are generated at random every 0.5 seconds within 1% of the latest trade price; takers cross the spread to consume resting liquidity while makers replenish the book.
+A lightweight HTML + JavaScript market simulator that renders a live order book, candlestick price action, and cumulative depth curves. Orders are generated at random every 0.5 seconds within 3% of the latest trade price; takers cross the spread to consume resting liquidity while makers replenish the book.
 
 ## Usage
 
