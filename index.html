@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Market Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@4.4.0/dist/chartjs-chart-financial.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1021;
+      --card: #11172c;
+      --accent: #62d6ff;
+      --text: #e8edf7;
+      --muted: #8fa2c0;
+      --buy: #52e2a7;
+      --sell: #f76c5e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(98,214,255,0.06), transparent 40%),
+                  radial-gradient(circle at 80% 0%, rgba(82,226,167,0.08), transparent 35%),
+                  var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.02em;
+    }
+    .pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(98,214,255,0.12);
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 13px;
+    }
+    main {
+      padding: 0 24px 24px;
+      display: grid;
+      grid-template-columns: 2.5fr 1.5fr;
+      grid-template-rows: auto auto 1fr;
+      gap: 16px;
+    }
+    .card {
+      background: linear-gradient(145deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 12px 50px rgba(0,0,0,0.45);
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .metric-title { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+    .metric-value { font-size: 24px; font-weight: 700; }
+    .metric-sub { color: var(--muted); font-size: 12px; }
+    .book-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { font-size: 13px; padding: 6px 4px; text-align: right; }
+    th { color: var(--muted); font-weight: 600; }
+    tr:nth-child(every) { background: transparent; }
+    .bid { color: var(--buy); }
+    .ask { color: var(--sell); }
+    .table-card { max-height: 360px; overflow: auto; }
+    .section-title { margin: 0 0 12px; font-size: 16px; font-weight: 700; }
+    .flex-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .badge { padding: 4px 8px; border-radius: 8px; background: rgba(255,255,255,0.04); font-size: 12px; color: var(--muted); }
+    .highlight { color: var(--accent); font-weight: 700; }
+    @media (max-width: 1100px) { main { grid-template-columns: 1fr; grid-template-rows: auto; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Market Simulator</h1>
+    <div class="pill">Synthetic order flow · updates every 0.5s</div>
+  </header>
+
+  <main>
+    <section class="card" style="grid-column: 1 / -1;">
+      <div class="metrics">
+        <div>
+          <div class="metric-title">Last Price</div>
+          <div class="metric-value" id="lastPrice">$0.00</div>
+          <div class="metric-sub">driven by simulated trades</div>
+        </div>
+        <div>
+          <div class="metric-title">Mid Price</div>
+          <div class="metric-value" id="midPrice">$0.00</div>
+          <div class="metric-sub">average of best bid & ask</div>
+        </div>
+        <div>
+          <div class="metric-title">24h Volume (sim)</div>
+          <div class="metric-value" id="simVolume">0</div>
+          <div class="metric-sub">increments with fills</div>
+        </div>
+        <div>
+          <div class="metric-title">Order Flow</div>
+          <div class="metric-value" id="orderFlow">0 / 0</div>
+          <div class="metric-sub">makers / takers this minute</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" style="grid-row: span 2;">
+      <div class="flex-between">
+        <h2 class="section-title">Candlesticks</h2>
+        <span class="badge">Depth overlay shows order book stacks</span>
+      </div>
+      <canvas id="candleChart" height="240"></canvas>
+      <div style="height: 20px"></div>
+      <div class="flex-between">
+        <h2 class="section-title">Order Book Depth</h2>
+        <span class="badge">Cumulative volume by price</span>
+      </div>
+      <canvas id="depthChart" height="140"></canvas>
+    </section>
+
+    <section class="card table-card">
+      <div class="flex-between">
+        <h2 class="section-title">Order Book</h2>
+        <span class="badge">Makers rest; takers cross the spread</span>
+      </div>
+      <div class="book-container">
+        <div>
+          <div class="metric-sub">Bids</div>
+          <table>
+            <thead>
+              <tr><th>Size</th><th>Price</th></tr>
+            </thead>
+            <tbody id="bidTable"></tbody>
+          </table>
+        </div>
+        <div>
+          <div class="metric-sub">Asks</div>
+          <table>
+            <thead>
+              <tr><th>Price</th><th>Size</th></tr>
+            </thead>
+            <tbody id="askTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card table-card">
+      <div class="flex-between">
+        <h2 class="section-title">Recent Trades</h2>
+        <span class="badge">Price takers consume resting liquidity</span>
+      </div>
+      <table>
+        <thead>
+          <tr><th style="text-align:left">Time</th><th>Side</th><th>Size</th><th>Price</th></tr>
+        </thead>
+        <tbody id="tradeTable"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const orderBook = { bids: [], asks: [] };
+    const trades = [];
+    const candles = [];
+    const candleMs = 30_000;
+    let lastPrice = 100;
+    let simVolume = 0;
+    let makerCount = 0;
+    let takerCount = 0;
+    let candleChart, depthChart;
+
+    function formatPrice(p) { return '$' + p.toFixed(2); }
+    function formatSize(s) { return s.toFixed(3); }
+    function nowTs() { return Date.now(); }
+
+    function seedBook() {
+      const base = lastPrice;
+      for (let i = 0; i < 12; i++) {
+        const spread = (i + 1) * 0.08;
+        orderBook.bids.push({ price: base - spread, size: +(Math.random() * 2 + 0.4).toFixed(3) });
+        orderBook.asks.push({ price: base + spread, size: +(Math.random() * 2 + 0.4).toFixed(3) });
+      }
+      sortBook();
+    }
+
+    function sortBook() {
+      orderBook.bids.sort((a, b) => b.price - a.price);
+      orderBook.asks.sort((a, b) => a.price - b.price);
+    }
+
+    function mergeOrAdd(list, level) {
+      const existing = list.find(l => Math.abs(l.price - level.price) < 1e-6);
+      if (existing) {
+        existing.size += level.size;
+      } else {
+        list.push(level);
+      }
+    }
+
+    function addOrderToBook(order) {
+      if (order.side === 'buy') {
+        mergeOrAdd(orderBook.bids, { price: order.price, size: order.size });
+      } else {
+        mergeOrAdd(orderBook.asks, { price: order.price, size: order.size });
+      }
+      sortBook();
+      makerCount++;
+    }
+
+    function recordTrade(price, size, side) {
+      const time = new Date();
+      trades.unshift({ price, size, side, time });
+      if (trades.length > 24) trades.pop();
+      lastPrice = price;
+      simVolume += size;
+      updateCandles({ price, size, time });
+      takerCount++;
+    }
+
+    function updateCandles(trade) {
+      const bucket = Math.floor(trade.time.getTime() / candleMs) * candleMs;
+      const lastCandle = candles[candles.length - 1];
+      if (lastCandle && lastCandle.x === bucket) {
+        lastCandle.h = Math.max(lastCandle.h, trade.price);
+        lastCandle.l = Math.min(lastCandle.l, trade.price);
+        lastCandle.c = trade.price;
+        lastCandle.v += trade.size;
+      } else {
+        candles.push({
+          x: bucket,
+          o: lastCandle ? lastCandle.c : trade.price,
+          h: trade.price,
+          l: trade.price,
+          c: trade.price,
+          v: trade.size,
+        });
+      }
+      if (candles.length > 80) candles.shift();
+    }
+
+    function processOrder(order) {
+      if (order.side === 'buy') {
+        while (order.size > 0 && orderBook.asks.length && order.price >= orderBook.asks[0].price) {
+          const best = orderBook.asks[0];
+          const tradeSize = Math.min(order.size, best.size);
+          best.size -= tradeSize;
+          order.size -= tradeSize;
+          recordTrade(best.price, tradeSize, 'buy');
+          if (best.size <= 0.0001) orderBook.asks.shift();
+        }
+      } else {
+        while (order.size > 0 && orderBook.bids.length && order.price <= orderBook.bids[0].price) {
+          const best = orderBook.bids[0];
+          const tradeSize = Math.min(order.size, best.size);
+          best.size -= tradeSize;
+          order.size -= tradeSize;
+          recordTrade(best.price, tradeSize, 'sell');
+          if (best.size <= 0.0001) orderBook.bids.shift();
+        }
+      }
+      if (order.size > 0) {
+        addOrderToBook(order);
+      }
+      refreshUi();
+    }
+
+    function simulateOrder() {
+      const mid = getMidPrice();
+      const drift = (Math.random() * 0.02 - 0.01);
+      const price = +(lastPrice * (1 + drift)).toFixed(2);
+      const size = +(Math.random() * 4 + 0.2).toFixed(3);
+      const side = Math.random() > 0.5 ? 'buy' : 'sell';
+      const order = { price: constrainPrice(price, mid), size, side };
+      processOrder(order);
+    }
+
+    function constrainPrice(price, mid) {
+      const band = mid * 0.01;
+      const lower = mid - band;
+      const upper = mid + band;
+      return Math.min(Math.max(price, lower), upper);
+    }
+
+    function getMidPrice() {
+      const bestBid = orderBook.bids[0]?.price ?? lastPrice;
+      const bestAsk = orderBook.asks[0]?.price ?? lastPrice;
+      return (bestBid + bestAsk) / 2;
+    }
+
+    function formatTime(date) {
+      return date.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function refreshTables() {
+      const bidTable = document.getElementById('bidTable');
+      const askTable = document.getElementById('askTable');
+      bidTable.innerHTML = orderBook.bids.slice(0, 16).map(b => `<tr><td class="bid">${formatSize(b.size)}</td><td>${formatPrice(b.price)}</td></tr>`).join('');
+      askTable.innerHTML = orderBook.asks.slice(0, 16).map(a => `<tr><td>${formatPrice(a.price)}</td><td class="ask">${formatSize(a.size)}</td></tr>`).join('');
+
+      const tradeTable = document.getElementById('tradeTable');
+      tradeTable.innerHTML = trades.map(t => {
+        return `<tr><td style="text-align:left">${formatTime(t.time)}</td><td class="${t.side === 'buy' ? 'bid' : 'ask'}">${t.side.toUpperCase()}</td><td>${formatSize(t.size)}</td><td>${formatPrice(t.price)}</td></tr>`;
+      }).join('');
+    }
+
+    function refreshMetrics() {
+      document.getElementById('lastPrice').textContent = formatPrice(lastPrice);
+      document.getElementById('midPrice').textContent = formatPrice(getMidPrice());
+      document.getElementById('simVolume').textContent = simVolume.toFixed(3) + ' units';
+      document.getElementById('orderFlow').textContent = `${makerCount} / ${takerCount}`;
+    }
+
+    function buildCharts() {
+      const ctxCandle = document.getElementById('candleChart');
+      candleChart = new Chart(ctxCandle, {
+        type: 'candlestick',
+        data: { datasets: [{ label: 'Price', data: candles, color: { up: '#52e2a7', down: '#f76c5e', unchanged: '#62d6ff' } }] },
+        options: {
+          responsive: true,
+          animation: false,
+          scales: {
+            x: { type: 'time', time: { unit: 'minute', displayFormats: { minute: 'HH:mm' } }, ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } },
+            y: { ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { mode: 'index', intersect: false }
+          }
+        }
+      });
+
+      const ctxDepth = document.getElementById('depthChart');
+      depthChart = new Chart(ctxDepth, {
+        type: 'line',
+        data: { datasets: [] },
+        options: {
+          responsive: true,
+          animation: false,
+          interaction: { intersect: false, mode: 'index' },
+          scales: {
+            x: { ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } },
+            y: { ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } }
+          },
+          plugins: { legend: { display: true }, tooltip: { mode: 'index', intersect: false } }
+        }
+      });
+    }
+
+    function updateDepthChart() {
+      const bids = orderBook.bids.slice(0, 40).map(b => ({ price: b.price, size: b.size })).sort((a, b) => b.price - a.price);
+      const asks = orderBook.asks.slice(0, 40).map(a => ({ price: a.price, size: a.size })).sort((a, b) => a.price - b.price);
+      let cum = 0;
+      const bidDepth = bids.map(b => { cum += b.size; return { x: b.price, y: cum }; });
+      cum = 0;
+      const askDepth = asks.map(a => { cum += a.size; return { x: a.price, y: cum }; });
+
+      depthChart.data.datasets = [
+        {
+          label: 'Bids',
+          data: bidDepth,
+          borderColor: '#52e2a7',
+          backgroundColor: 'rgba(82,226,167,0.18)',
+          fill: true,
+          stepped: true,
+          tension: 0
+        },
+        {
+          label: 'Asks',
+          data: askDepth,
+          borderColor: '#f76c5e',
+          backgroundColor: 'rgba(247,108,94,0.18)',
+          fill: true,
+          stepped: true,
+          tension: 0
+        }
+      ];
+      depthChart.update();
+    }
+
+    function refreshCharts() {
+      candleChart.data.datasets[0].data = candles;
+      candleChart.update();
+      updateDepthChart();
+    }
+
+    function refreshUi() {
+      refreshTables();
+      refreshMetrics();
+      refreshCharts();
+    }
+
+    function resetOrderFlow() {
+      makerCount = 0;
+      takerCount = 0;
+    }
+
+    function bootstrap() {
+      seedBook();
+      buildCharts();
+      const initialTrade = { price: lastPrice, size: 1, time: new Date() };
+      updateCandles(initialTrade);
+      refreshUi();
+      setInterval(simulateOrder, 500);
+      setInterval(resetOrderFlow, 60_000);
+    }
+
+    document.addEventListener('DOMContentLoaded', bootstrap);
+  </script>
+</body>
+</html>
