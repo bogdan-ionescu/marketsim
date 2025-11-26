@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@4.4.0/dist/chartjs-chart-financial.min.js"></script>
   <script>
-    (function registerFinancialChart() {
+    const financialReady = (function registerFinancialChart() {
       const financial =
         window['chartjs-chart-financial'] ||
         window.chartjsChartFinancial ||
@@ -19,15 +19,17 @@
 
       if (financial?.registerables) {
         Chart.register(...financial.registerables);
-        return;
+        return true;
       }
 
       const { CandlestickController, CandlestickElement, OhlcController, OhlcElement } = financial || {};
       if (CandlestickController && CandlestickElement && OhlcController && OhlcElement) {
         Chart.register(CandlestickController, CandlestickElement, OhlcController, OhlcElement);
-      } else {
-        console.error('chartjs-chart-financial failed to load; candlestick charts will not render.');
+        return true;
       }
+
+      console.error('chartjs-chart-financial failed to load; candlestick charts will not render.');
+      return false;
     })();
   </script>
   <style>
@@ -351,8 +353,18 @@
     function buildCharts() {
       const ctxCandle = document.getElementById('candleChart');
       candleChart = new Chart(ctxCandle, {
-        type: 'candlestick',
-        data: { datasets: [{ label: 'Price', data: candles, color: { up: '#52e2a7', down: '#f76c5e', unchanged: '#62d6ff' } }] },
+        type: financialReady ? 'candlestick' : 'line',
+        data: {
+          datasets: [{
+            label: 'Price',
+            data: financialReady ? candles : candles.map(c => ({ x: c.x, y: c.c })),
+            color: financialReady ? { up: '#52e2a7', down: '#f76c5e', unchanged: '#62d6ff' } : undefined,
+            borderColor: '#62d6ff',
+            backgroundColor: 'rgba(98,214,255,0.16)',
+            tension: 0,
+            pointRadius: financialReady ? 0 : 1.5,
+          }]
+        },
         options: {
           responsive: true,
           animation: false,
@@ -362,10 +374,20 @@
           },
           plugins: {
             legend: { display: false },
-            tooltip: { mode: 'index', intersect: false }
+            tooltip: { mode: 'index', intersect: false },
+            annotation: !financialReady && { annotations: {} }
           }
         }
       });
+
+      if (!financialReady) {
+        const warning = document.createElement('div');
+        warning.textContent = 'Candlestick plugin failed to load; falling back to line chart. If loading from file:// consider a local server to avoid CDN blocking.';
+        warning.style.color = '#f76c5e';
+        warning.style.fontSize = '12px';
+        warning.style.marginTop = '8px';
+        ctxCandle.parentElement.insertBefore(warning, ctxCandle.nextSibling);
+      }
 
       const ctxDepth = document.getElementById('depthChart');
       depthChart = new Chart(ctxDepth, {
@@ -416,7 +438,7 @@
     }
 
     function refreshCharts() {
-      candleChart.data.datasets[0].data = candles;
+      candleChart.data.datasets[0].data = financialReady ? candles : candles.map(c => ({ x: c.x, y: c.c }));
       candleChart.update();
       updateDepthChart();
     }

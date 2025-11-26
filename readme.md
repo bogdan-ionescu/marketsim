@@ -6,6 +6,9 @@ A lightweight HTML + JavaScript market simulator that renders a live order book,
 
 Open `index.html` in a browser. No build tooling is required because all dependencies load from CDNs.
 
+If your browser blocks CDN scripts when opening from `file://`, start a tiny local server such as `python -m http.server 8000` in
+this directory and browse to `http://localhost:8000/` so the Chart.js financial plugin can load.
+
 * The **candlestick chart** uses the Chart.js financial plugin and updates whenever trades occur.
 * The **depth overlay** shows cumulative bid/ask liquidity from the simulated order book.
 * **Order flow counters** reset each minute to highlight maker vs taker activity.
