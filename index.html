@@ -10,6 +10,10 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@4.4.0/dist/chartjs-chart-financial.min.js"></script>
+  <script>
+    const { CandlestickController, CandlestickElement, OhlcController, OhlcElement } = window['chartjs-chart-financial'];
+    Chart.register(CandlestickController, CandlestickElement, OhlcController, OhlcElement);
+  </script>
   <style>
     :root {
       color-scheme: dark;
