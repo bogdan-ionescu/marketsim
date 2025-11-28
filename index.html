@@ -355,7 +355,7 @@
           animation: false,
           interaction: { intersect: false, mode: 'index' },
           scales: {
-            x: { ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } },
+            x: { type: 'linear', ticks: { color: '#9bb1d0', callback: (v) => `$${v}` }, grid: { color: 'rgba(255,255,255,0.03)' } },
             y: { ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } }
           },
           plugins: { legend: { display: true }, tooltip: { mode: 'index', intersect: false } }
@@ -367,9 +367,19 @@
       const bids = orderBook.bids.slice(0, 40).map(b => ({ price: b.price, size: b.size })).sort((a, b) => b.price - a.price);
       const asks = orderBook.asks.slice(0, 40).map(a => ({ price: a.price, size: a.size })).sort((a, b) => a.price - b.price);
       let cum = 0;
-      const bidDepth = bids.map(b => { cum += b.size; return { x: b.price, y: cum }; });
+      const bidDepth = bids.reduce((arr, b, idx) => {
+        if (idx === 0) arr.push({ x: b.price, y: 0 });
+        cum += b.size;
+        arr.push({ x: b.price, y: cum });
+        return arr;
+      }, []);
       cum = 0;
-      const askDepth = asks.map(a => { cum += a.size; return { x: a.price, y: cum }; });
+      const askDepth = asks.reduce((arr, a, idx) => {
+        if (idx === 0) arr.push({ x: a.price, y: 0 });
+        cum += a.size;
+        arr.push({ x: a.price, y: cum });
+        return arr;
+      }, []);
 
       depthChart.data.datasets = [
         {
