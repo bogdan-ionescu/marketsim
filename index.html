@@ -417,7 +417,7 @@
           animation: false,
           interaction: { intersect: false, mode: 'index' },
           scales: {
-            x: { ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } },
+            x: { type: 'linear', ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } },
             y: { ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } }
           },
           plugins: { legend: { display: true }, tooltip: { mode: 'index', intersect: false } }
@@ -428,10 +428,25 @@
     function updateDepthChart() {
       const bids = orderBook.bids.slice(0, 40).map(b => ({ price: b.price, size: b.size })).sort((a, b) => b.price - a.price);
       const asks = orderBook.asks.slice(0, 40).map(a => ({ price: a.price, size: a.size })).sort((a, b) => a.price - b.price);
-      let cum = 0;
-      const bidDepth = bids.map(b => { cum += b.size; return { x: b.price, y: cum }; });
-      cum = 0;
-      const askDepth = asks.map(a => { cum += a.size; return { x: a.price, y: cum }; });
+
+      function buildDepthSeries(levels, side) {
+        if (!levels.length) return [];
+        let cumulative = 0;
+        const series = [{ x: levels[0].price, y: 0 }];
+        levels.forEach(level => {
+          cumulative += level.size;
+          series.push({ x: level.price, y: cumulative });
+        });
+
+        // Ensure the steps extend outward from the spread for better visual separation
+        const last = levels[levels.length - 1];
+        const priceOffset = side === 'bid' ? -0.02 : 0.02;
+        series.push({ x: last.price + priceOffset, y: cumulative });
+        return series;
+      }
+
+      const bidDepth = buildDepthSeries(bids, 'bid');
+      const askDepth = buildDepthSeries(asks, 'ask');
 
       depthChart.data.datasets = [
         {
@@ -441,6 +456,8 @@
           backgroundColor: 'rgba(82,226,167,0.18)',
           fill: true,
           stepped: true,
+          pointRadius: 0,
+          borderWidth: 2,
           tension: 0
         },
         {
@@ -450,6 +467,8 @@
           backgroundColor: 'rgba(247,108,94,0.18)',
           fill: true,
           stepped: true,
+          pointRadius: 0,
+          borderWidth: 2,
           tension: 0
         }
       ];
