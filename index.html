@@ -221,6 +221,8 @@
     const trades = [];
     const candles = [];
     const candleMs = 30_000;
+    let orderBias = 0;      // -1 (heavy sell) to +1 (heavy buy)
+    let volatility = 1;     // volatility regime multiplier
     let lastPrice = 100;
     let simVolume = 0;
     let makerCount = 0;
@@ -322,21 +324,63 @@
       refreshUi();
     }
 
+    function updateRegimes() {
+      // Order-flow bias: slow random walk, mean-reverting
+      orderBias += (Math.random() - 0.5) * 0.1;
+      // Soft mean reversion
+      orderBias *= 0.98;
+      orderBias = Math.max(-1, Math.min(1, orderBias));
+
+      // Occasional volatility regime switch
+      if (Math.random() < 0.02) { // ~2% per tick
+        const regimes = [0.5, 1, 1.5, 2.5];
+        volatility = regimes[Math.floor(Math.random() * regimes.length)];
+      }
+    }
+
     function simulateOrder() {
+      updateRegimes();
+
       const mid = getMidPrice();
-      const drift = (Math.random() * 0.02 - 0.01);
-      const price = +(lastPrice * (1 + drift)).toFixed(2);
+
+      // Volatility-scaled drift
+      const baseDrift = (Math.random() * 0.02 - 0.01) * volatility;
+      const price = +(lastPrice * (1 + baseDrift)).toFixed(2);
+
+      // Bias the side using orderBias:
+      // orderBias > 0 -> more buys; orderBias < 0 -> more sells
+      const rnd = Math.random();
+      const biasShift = orderBias * 0.3; // strength of bias
+      const side = (rnd + biasShift) > 0.5 ? 'buy' : 'sell';
+
       const size = +(Math.random() * 4 + 0.2).toFixed(3);
-      const side = Math.random() > 0.5 ? 'buy' : 'sell';
+
+      // Looser constraint (or remove completely)
       const order = { price: constrainPrice(price, mid), size, side };
       processOrder(order);
     }
 
     function constrainPrice(price, mid) {
-      const band = mid * 0.03;
+      const band = mid * 0.10 * volatility; // up to ±10% * volatility
       const lower = mid - band;
       const upper = mid + band;
       return Math.min(Math.max(price, lower), upper);
+    }
+
+    function randomCancellations() {
+      const mid = getMidPrice();
+
+      function cancelSide(levels, baseProb) {
+        return levels.filter(level => {
+          // Stronger cancellation farther from mid to keep book concentrated
+          const dist = Math.abs(level.price - mid) / mid; // relative distance
+          const prob = baseProb + dist * 0.5; // more likely to cancel far away
+          return Math.random() > prob;
+        });
+      }
+
+      orderBook.bids = cancelSide(orderBook.bids, 0.02); // ~2% base cancel
+      orderBook.asks = cancelSide(orderBook.asks, 0.02);
     }
 
     function getMidPrice() {
@@ -500,6 +544,9 @@
       refreshUi();
       setInterval(simulateOrder, 500);
       setInterval(resetOrderFlow, 60_000);
+
+      // add periodic cancellations
+      setInterval(randomCancellations, 2_000); // every 2s
     }
 
     document.addEventListener('DOMContentLoaded', bootstrap);
