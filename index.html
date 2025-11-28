@@ -4,52 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Market Simulator</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='4' fill='%230b1021'/%3E%3Cpath d='M6 15.5 10 11l3 3 5-6.5' stroke='%2362d6ff' stroke-width='2.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M6 17h2v-3H6zm5 0h2v-4h-2zm5 0h2v-7h-2z' fill='%2352e2a7'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
-  <script>
-    // Lightweight candlestick renderer (avoids external financial plugin)
-    const candlePainter = {
-      id: 'candlePainter',
-      afterDatasetsDraw(chart) {
-        const dataset = chart.data.datasets[0];
-        if (!dataset?.data?.length) return;
-        const { ctx, scales: { x, y } } = chart;
-        const width = 8;
-
-        ctx.save();
-        dataset.data.forEach((dp) => {
-          if (typeof dp?.o !== 'number' || typeof dp?.c !== 'number' || typeof dp?.h !== 'number' || typeof dp?.l !== 'number') return;
-          const xPos = x.getPixelForValue(dp.x);
-          const yHigh = y.getPixelForValue(dp.h);
-          const yLow = y.getPixelForValue(dp.l);
-          const yOpen = y.getPixelForValue(dp.o);
-          const yClose = y.getPixelForValue(dp.c);
-          const rising = dp.c >= dp.o;
-          const color = rising ? '#52e2a7' : '#f76c5e';
-
-          ctx.strokeStyle = color;
-          ctx.fillStyle = color;
-          ctx.lineWidth = 2;
-
-          // Wick
-          ctx.beginPath();
-          ctx.moveTo(xPos, yHigh);
-          ctx.lineTo(xPos, yLow);
-          ctx.stroke();
-
-          // Body
-          const bodyTop = rising ? yClose : yOpen;
-          const bodyBottom = rising ? yOpen : yClose;
-          ctx.fillRect(xPos - width / 2, bodyTop, width, Math.max(2, bodyBottom - bodyTop));
-        });
-        ctx.restore();
-      }
-    };
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@4.4.0/dist/chartjs-chart-financial.min.js"></script>
   <style>
     :root {
       color-scheme: dark;
@@ -333,7 +292,7 @@
     }
 
     function constrainPrice(price, mid) {
-      const band = mid * 0.03;
+      const band = mid * 0.01;
       const lower = mid - band;
       const upper = mid + band;
       return Math.min(Math.max(price, lower), upper);
@@ -371,18 +330,8 @@
     function buildCharts() {
       const ctxCandle = document.getElementById('candleChart');
       candleChart = new Chart(ctxCandle, {
-        type: 'bar',
-        data: {
-          datasets: [{
-            label: 'Price',
-            data: candles.map(c => ({ ...c, y: c.c })),
-            borderColor: 'transparent',
-            backgroundColor: 'transparent',
-            parsing: false,
-            barPercentage: 1,
-            categoryPercentage: 1,
-          }]
-        },
+        type: 'candlestick',
+        data: { datasets: [{ label: 'Price', data: candles, color: { up: '#52e2a7', down: '#f76c5e', unchanged: '#62d6ff' } }] },
         options: {
           responsive: true,
           animation: false,
@@ -392,20 +341,9 @@
           },
           plugins: {
             legend: { display: false },
-            tooltip: {
-              mode: 'index',
-              intersect: false,
-              callbacks: {
-                label(ctx) {
-                  const d = ctx.raw;
-                  if (!d) return '';
-                  return `O ${formatPrice(d.o)} · H ${formatPrice(d.h)} · L ${formatPrice(d.l)} · C ${formatPrice(d.c)} · V ${formatSize(d.v)}`;
-                }
-              }
-            }
+            tooltip: { mode: 'index', intersect: false }
           }
-        },
-        plugins: [candlePainter]
+        }
       });
 
       const ctxDepth = document.getElementById('depthChart');
@@ -417,7 +355,7 @@
           animation: false,
           interaction: { intersect: false, mode: 'index' },
           scales: {
-            x: { ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } },
+            x: { type: 'linear', ticks: { color: '#9bb1d0', callback: (v) => `$${v}` }, grid: { color: 'rgba(255,255,255,0.03)' } },
             y: { ticks: { color: '#9bb1d0' }, grid: { color: 'rgba(255,255,255,0.03)' } }
           },
           plugins: { legend: { display: true }, tooltip: { mode: 'index', intersect: false } }
@@ -429,9 +367,19 @@
       const bids = orderBook.bids.slice(0, 40).map(b => ({ price: b.price, size: b.size })).sort((a, b) => b.price - a.price);
       const asks = orderBook.asks.slice(0, 40).map(a => ({ price: a.price, size: a.size })).sort((a, b) => a.price - b.price);
       let cum = 0;
-      const bidDepth = bids.map(b => { cum += b.size; return { x: b.price, y: cum }; });
+      const bidDepth = bids.reduce((arr, b, idx) => {
+        if (idx === 0) arr.push({ x: b.price, y: 0 });
+        cum += b.size;
+        arr.push({ x: b.price, y: cum });
+        return arr;
+      }, []);
       cum = 0;
-      const askDepth = asks.map(a => { cum += a.size; return { x: a.price, y: cum }; });
+      const askDepth = asks.reduce((arr, a, idx) => {
+        if (idx === 0) arr.push({ x: a.price, y: 0 });
+        cum += a.size;
+        arr.push({ x: a.price, y: cum });
+        return arr;
+      }, []);
 
       depthChart.data.datasets = [
         {
@@ -457,7 +405,7 @@
     }
 
     function refreshCharts() {
-      candleChart.data.datasets[0].data = candles.map(c => ({ ...c, y: c.c }));
+      candleChart.data.datasets[0].data = candles;
       candleChart.update();
       updateDepthChart();
     }
